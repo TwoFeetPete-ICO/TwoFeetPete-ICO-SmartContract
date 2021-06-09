@@ -724,7 +724,7 @@ contract TwoFeetPeteICO is Ownable {
     using SafeMath for uint256;
     using Address for address;
     
-    IERC20 _tokenContract;
+    IERC20 public _tokenContract;
     
     uint256 public _persaleTokenPercent;
     uint256 public _liquidityTokenPercent;
@@ -758,21 +758,22 @@ contract TwoFeetPeteICO is Ownable {
     bool public _isSettedPresaleToken = false;
     bool public _isSettedSoftHardCap = false;
     bool public _isSettedMinManContribution = false;
-    bool public _isSettedPresaleDuration = false;
-    bool public _isSettedPancakeRouterAddress = false;
     bool public _isSettedFeeAddressPercent = false;
 
     bool public _isSettingConfirmed = false;
+    bool public _isLiquidityCreatedAndShareDesposite = false;
 
 
     //////////////////////////////////////////////////////// Configure Presale Settings ///////////////////////////////////////////////////////////////////
 
-    function setPresaleToken(address tokenAddress, uint256 presalePercent, uint256 liquidityPercent) external onlyOwner{
+    function setPresaleToken(address tokenAddress, address pancakeRouterAddress, uint256 presalePercent, uint256 liquidityPercent) external onlyOwner{
         require(!_isSettingConfirmed, "Presale Config is already defined!");
         require(presalePercent != 0, "Presale Percent should be over than 0");
         require(liquidityPercent != 0, "Liquidity Percent should be over than 0");
+        require(presalePercent + liquidityPercent <= 100, "Both Percent can't be over than 100%");
 
         _tokenContract = IERC20(tokenAddress);
+        _pancakeRouterAddress = pancakeRouterAddress;
         _persaleTokenPercent = presalePercent;
         _liquidityTokenPercent = liquidityPercent;
 
@@ -797,22 +798,6 @@ contract TwoFeetPeteICO is Ownable {
         _isSettedMinManContribution = true;
     }
 
-    function setPresaleDuration(uint256 durationDays) external onlyOwner{
-        require(!_isSettingConfirmed, "Presale Config is already defined!");
-
-        _durationDays = durationDays;
-
-        _isSettedPresaleDuration = true;
-    }
-
-    function setPancakeRouterAddress(address pancakeRouterAddress) external onlyOwner{
-        require(!_isSettingConfirmed, "Presale Config is already defined!");
-
-        _pancakeRouterAddress = pancakeRouterAddress;
-
-        _isSettedPancakeRouterAddress = true;
-    }
-
     function setFeeAddressAndPercent(address feePresaleManagerAddress, uint32 feePresaleManagerPercent, address feeTokenOwnerAddress, uint32 feeTokenOwnerPercent) external onlyOwner{
         require(!_isSettingConfirmed, "Presale Config is already defined!");
 
@@ -824,13 +809,11 @@ contract TwoFeetPeteICO is Ownable {
         _isSettedFeeAddressPercent = true;
     }
 
-    function confirmStartPresale() external onlyOwner{
+    function confirmStartPresale(uint256 startTime, uint256 endTime) external onlyOwner{
         require(!_isSettingConfirmed, "Presale Config is already defined!");
         require(_isSettedPresaleToken, "Presale Token Setting is not defined!");
         require(_isSettedSoftHardCap, "SoftCap, HardCap Setting is not defined!");
         require(_isSettedMinManContribution, "Contribution Setting is not defined!");
-        require(_isSettedPresaleDuration, "Presale Duration Setting is not defined!");
-        require(_isSettedPancakeRouterAddress, "PancakeRouter is not defined!");
         require(_isSettedFeeAddressPercent, "Fee Address and Percent is not defined!");
 
         uint256 presaleAmount = tokensForPresale();
@@ -838,11 +821,11 @@ contract TwoFeetPeteICO is Ownable {
 
         require(_tokenContract.balanceOf(address(this)) >= (presaleAmount + liquidityAmount), "There is not enough tokens for presale and liquidity");
 
-        _startPresaleTime = block.timestamp;
-        _endPresaleTime = _startPresaleTime + _durationDays * 1 days;
+        _startPresaleTime = startTime;
+        _endPresaleTime = endTime;
 
         IPancakeRouter02 _pancakeRouter = IPancakeRouter02(_pancakeRouterAddress);
-        pancakePair = IPancakeFactory(_pancakeRouter.factory()).createPair(address(this), _pancakeRouter.WETH());
+        pancakePair = IPancakeFactory(_pancakeRouter.factory()).createPair(address(_tokenContract), _pancakeRouter.WETH());
         pancakeRouter = _pancakeRouter;
 
         _isSettingConfirmed = true;
@@ -886,10 +869,13 @@ contract TwoFeetPeteICO is Ownable {
 
     //////////////////////////////////////////////////////// Presale Main Logic ///////////////////////////////////////////////////////////////////
 
-    ///// 0: NOT STARTED, 1: PENDING, 2: FAILED, 3: POSSIBLE /////
+    ///// 0: NOT STARTED, 1: PENDING, 2: FAILED, 3: POSSIBLE 4: SETTING CONFIRMED BUT DIDN't STARTED YET/////
     function statusOfPresale() public view returns(uint256){
         if (!_isSettingConfirmed){
             return 0;
+        }
+        else if (block.timestamp < _startPresaleTime){
+            return 4;
         }
         else if (block.timestamp < _endPresaleTime){
             if (_totalDeposite >= _hardCap)
@@ -911,6 +897,13 @@ contract TwoFeetPeteICO is Ownable {
     modifier _validateClaimTokenAndSale() {
         require(statusOfPresale() == 3, "Presale should be finished!");
         require(_mapDeposite[_msgSender()] > 0, "Didn't deposite any thing!");
+        require(_isLiquidityCreatedAndShareDesposite == true, "Liquidity is not added yet.!");
+        _;
+    }
+
+    modifier _validateAddLiquidityAndShareDesposite() {
+        require(statusOfPresale() == 3, "Presale should be finished!");
+        require(_isLiquidityCreatedAndShareDesposite == false, "You already added liquidity and share all Desposite amount!");
         _;
     }
 
@@ -938,7 +931,7 @@ contract TwoFeetPeteICO is Ownable {
         _mapDeposite[_msgSender()] = 0;
     }
 
-    function addLiquidityAndShareDesposite() external _validateClaimTokenAndSale() onlyOwner{
+    function addLiquidityAndShareDesposite() external _validateAddLiquidityAndShareDesposite() onlyOwner{
         uint256 feePresaleManager = _totalDeposite.mul(_feePresaleManagerPercent).div(10**2);
         uint256 feeTokenOwner = _totalDeposite.mul(_feeTokenOwnerPercent).div(10**2);
         uint256 liquidityTokenAmount = tokensForLiquidity();
@@ -950,12 +943,14 @@ contract TwoFeetPeteICO is Ownable {
         _tokenContract.approve(address(pancakeRouter), liquidityTokenAmount);
 
         pancakeRouter.addLiquidityETH{value: liquidityBNBAmount}(
-            address(this),
+            address(_tokenContract),
             liquidityTokenAmount,
             0, // slippage is unavoidable
             0, // slippage is unavoidable
             address(0),
             block.timestamp
         );
+
+        _isLiquidityCreatedAndShareDesposite = true;
     }
 }

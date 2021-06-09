@@ -451,7 +451,7 @@ contract TestCoin is ERC20 {
     // 1 Billion total supply
     uint tokenTotalSupply = 1000000000;
 
-    constructor() ERC20("Test Coin", "TEST") {
+    constructor() ERC20("Test Coin", "TEST1") {
         _mint(msg.sender, tokenTotalSupply * (10 ** uint256(decimals())));
     }
 }
