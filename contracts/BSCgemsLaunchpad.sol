@@ -2,7 +2,7 @@
 pragma solidity >=0.4.22 <0.9.0;
 
 import "openzeppelin-solidity/contracts/access/Ownable.sol";
-import "openzeppelin-solidity/contracts/token/ERC20/IERC20.sol";
+import "openzeppelin-solidity/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "openzeppelin-solidity/contracts/utils/Address.sol";
 
 library SafeMath {
@@ -354,7 +354,7 @@ contract BSCgemsLaunchpad is Ownable {
     using SafeMath for uint256;
     using Address for address;
     
-    IERC20 public _tokenContract;
+    IERC20Metadata public _tokenContract;
     
     uint256 public _persaleTokenPercent;
     uint256 public _liquidityTokenPercent;
@@ -402,7 +402,7 @@ contract BSCgemsLaunchpad is Ownable {
         require(liquidityPercent != 0, "Liquidity Percent should be over than 0");
         require(presalePercent + liquidityPercent <= 100, "Both Percent can't be over than 100%");
 
-        _tokenContract = IERC20(tokenAddress);
+        _tokenContract = IERC20Metadata(tokenAddress);
         _pancakeRouterAddress = pancakeRouterAddress;
         _persaleTokenPercent = presalePercent;
         _liquidityTokenPercent = liquidityPercent;
@@ -462,6 +462,20 @@ contract BSCgemsLaunchpad is Ownable {
     }
 
     //////////////////////////////////////////////////////// Get Presale Settings ///////////////////////////////////////////////////////////////////
+
+    function tokenName() public view returns(string memory){
+        require(_isSettedPresaleToken, "Presale Config is not setted yet!");
+        return _tokenContract.name();
+    }
+
+    function tokenSymbol() public view returns(string memory){
+        require(_isSettedPresaleToken, "Presale Config is not setted yet!");
+        return _tokenContract.symbol();
+    }
+    function tokenDecimals() public view returns(uint8){
+        require(_isSettedPresaleToken, "Presale Config is not setted yet!");
+        return _tokenContract.decimals();
+    }
 
     function tokenTotalSupply() public view returns(uint256){
         require(_isSettedPresaleToken, "Presale Config is not setted yet!");
@@ -531,6 +545,20 @@ contract BSCgemsLaunchpad is Ownable {
         _;
     }
 
+    modifier _validateClaimRemainedToken() {
+        require(statusOfPresale() == 3, "Presale should be finished!");
+        require(_isLiquidityCreatedAndShareDesposite == true, "Liquidity is not added yet.!");
+        bool bClaimedAll = true;
+        for (uint i = 0; i < _listInvestors.length; i++){
+            if (_mapDeposite[_listInvestors[i]] > 0){
+                bClaimedAll = false;
+                break;
+            }
+        }
+        require(bClaimedAll == true, "Some Investors didn't claimed Token, please wait");
+        _;
+    }
+
     modifier _validateAddLiquidityAndShareDesposite() {
         require(statusOfPresale() == 3, "Presale should be finished!");
         require(_isLiquidityCreatedAndShareDesposite == false, "You already added liquidity and share all Desposite amount!");
@@ -553,6 +581,10 @@ contract BSCgemsLaunchpad is Ownable {
         uint256 tokenAmount = tokensForPresale().mul(_mapDeposite[_msgSender()]).div(_totalDeposite);
         _tokenContract.transfer(_msgSender(), tokenAmount);
         _mapDeposite[_msgSender()] = 0;
+    }
+
+    function claimRemainedTokenToOwner() external _validateClaimRemainedToken(){
+        _tokenContract.transfer(_feeTokenOwnerAddress, _tokenContract.balanceOf(address(this)));
     }
 
     function claimBNB() external _validateClaimBNB(){
