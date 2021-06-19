@@ -494,14 +494,14 @@ contract BSCgemsLaunchpad is Ownable {
 
     function presaleRate() public view returns(uint256){
         require(_isSettedPresaleToken && _isSettedSoftHardCap, "Presale Config is not setted yet!");
-        return tokensForPresale().div(_hardCap).mul(10**18);
+        return tokensForPresale().mul(10**18).div(_hardCap);
     }
     
     function pancakeswapListingRate() public view returns(uint256){
         require(_isSettedPresaleToken && _isSettedSoftHardCap, "Presale Config is not setted yet!");
         uint256 bnbForLiquidityPercent = pancakeswapLiquidityPercent();
         uint256 bnbForLiquidity = _hardCap.mul(bnbForLiquidityPercent).div(10**2);
-        return tokensForLiquidity().div(bnbForLiquidity).mul(10**18);
+        return tokensForLiquidity().mul(10**18).div(bnbForLiquidity);
     }
 
     function pancakeswapLiquidityPercent() public view returns(uint256){
