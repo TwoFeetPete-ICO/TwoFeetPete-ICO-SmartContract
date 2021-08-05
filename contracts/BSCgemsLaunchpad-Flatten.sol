@@ -854,7 +854,9 @@ contract BSCgemsLaunchpad is Ownable {
         _endPresaleTime = endTime;
 
         IPancakeRouter02 _pancakeRouter = IPancakeRouter02(_pancakeRouterAddress);
-        pancakePair = IPancakeFactory(_pancakeRouter.factory()).createPair(address(_tokenContract), _pancakeRouter.WETH());
+        pancakePair = IPancakeFactory(_pancakeRouter.factory()).getPair(address(_tokenContract), _pancakeRouter.WETH());
+        if (pancakePair == address(0)) 
+            pancakePair = IPancakeFactory(_pancakeRouter.factory()).createPair(address(_tokenContract), _pancakeRouter.WETH());
         pancakeRouter = _pancakeRouter;
 
         _isSettingConfirmed = true;
